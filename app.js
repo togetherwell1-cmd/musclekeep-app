@@ -1,15 +1,18 @@
-/* 머슬킵 MVP — Week 1: 온보딩 + 프로필 + 홈 대시보드 뼈대
-   순수 바닐라 JS · localStorage. Week 2부터 기록/LLM추천/주사일/차트/결제 확장. */
+/* 머슬킵 MVP
+   Week 1: 온보딩 + 프로필 + 홈 대시보드
+   Week 2: 기록/로깅(단백질·체중·근력·부작용) + 홈 진행바 실데이터 + 연속기록
+   순수 바닐라 JS · localStorage. Week 3부터 LLM추천/주사일/차트/결제 확장. */
 
 const PROFILE_KEY = 'mk_profile_v1';
+const LOGS_KEY = 'mk_logs_v1';
 const app = document.getElementById('app');
 
 /* ---------- 상태 ---------- */
-let draft = {};        // 온보딩 중 임시 프로필
+let draft = {};
 let stepIndex = 0;
 let activeTab = 'home';
 
-/* ---------- 온보딩 질문 정의 ---------- */
+/* ---------- 온보딩 질문 ---------- */
 const STEPS = [
   { key:'drug', title:'지금 복용 중인 약은요?', hint:'가장 강한 순으로 근손실 위험이 달라요',
     opts:[['mounjaro','마운자로'],['wegovy','위고비'],['saxenda','삭센다'],['oral','경구/기타']] },
@@ -26,7 +29,7 @@ const STEPS = [
     opts:[['slow','천천히'],['normal','보통'],['fast','빠르게 / 급격히']] },
 ];
 
-/* ---------- 계산 로직 (계산기와 동일 원리) ---------- */
+/* ---------- 계산 로직 ---------- */
 const S = {
   drug:{mounjaro:2,wegovy:1,saxenda:0,oral:0},
   duration:{'start':0,'<3':0,'3-6':1,'6+':2},
@@ -39,7 +42,7 @@ function ageScore(a){ return a<40?0:a<50?1:a<65?2:3; }
 function compute(p){
   const raw = S.drug[p.drug] + S.duration[p.duration] + S.exercise[p.exercise]
             + S.protein[p.protein] + S.speed[p.speed] + ageScore(p.age);
-  const maxRaw = 13, pct = Math.round(raw/maxRaw*100);
+  const pct = Math.round(raw/13*100);
   let risk = raw<=3 ? 'low' : raw<=7 ? 'mid' : 'high';
 
   let f = 1.4;
@@ -50,7 +53,6 @@ function compute(p){
   f = Math.min(2.0, Math.max(1.2, f));
   const proteinTarget = Math.round(p.weight*f/5)*5;
 
-  // 오늘 할 일 3개
   const est = {high:Math.round(p.weight*1.2), mid:70, low:40}[p.protein];
   const gap = Math.max(0, proteinTarget - est);
   const acts = [];
@@ -64,19 +66,56 @@ function compute(p){
   return { riskLevel:risk, riskPct:pct, proteinTarget, actions:acts.slice(0,3) };
 }
 
-/* ---------- 저장/로드 ---------- */
+/* ---------- 프로필 저장/로드 ---------- */
 function loadProfile(){ try{ return JSON.parse(localStorage.getItem(PROFILE_KEY)); }catch(e){ return null; } }
 function saveProfile(p){ localStorage.setItem(PROFILE_KEY, JSON.stringify(p)); }
 function clearProfile(){ localStorage.removeItem(PROFILE_KEY); }
 
+/* ---------- 기록(로그) 저장/로드 (Week 2) ---------- */
+const QUICK_FOODS = [['계란 1개',6],['닭가슴살 100g',23],['두부 100g',9],['프로틴 1스쿱',20],['그릭요거트',10]];
+function todayKey(d=new Date()){
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function loadLogs(){ try{ return JSON.parse(localStorage.getItem(LOGS_KEY))||{}; }catch(e){ return {}; } }
+function saveLogs(l){ localStorage.setItem(LOGS_KEY, JSON.stringify(l)); }
+function getDay(key){
+  const l = loadLogs();
+  return l[key] || { protein:[], weightKg:null, resistanceDone:false, sideEffects:[] };
+}
+function setDay(key, day){ const l = loadLogs(); l[key]=day; saveLogs(l); }
+function proteinTotal(day){ return day.protein.reduce((s,e)=>s+(e.g||0),0); }
+function dayHasActivity(day){ return day.protein.length>0 || day.weightKg!=null || day.resistanceDone; }
+function streak(){
+  const l = loadLogs(); let n=0; const d=new Date();
+  for(let i=0;i<400;i++){
+    const key=todayKey(d);
+    const day=l[key];
+    if(day && dayHasActivity(day)) n++;
+    else if(i===0){ /* 오늘 아직 기록 없음 → 어제부터 카운트 */ }
+    else break;
+    d.setDate(d.getDate()-1);
+  }
+  return n;
+}
+
+/* 로그 조작 */
+function addProtein(g,label){ const k=todayKey(); const day=getDay(k);
+  day.protein.push({g:Math.round(g),label,at:new Date().toISOString()}); setDay(k,day); }
+function removeProtein(idx){ const k=todayKey(); const day=getDay(k); day.protein.splice(idx,1); setDay(k,day); }
+function setWeight(v){ const k=todayKey(); const day=getDay(k); day.weightKg=v; setDay(k,day); }
+function toggleResistance(){ const k=todayKey(); const day=getDay(k); day.resistanceDone=!day.resistanceDone; setDay(k,day); }
+function toggleSide(name){ const k=todayKey(); const day=getDay(k);
+  const i=day.sideEffects.indexOf(name); if(i>=0) day.sideEffects.splice(i,1); else day.sideEffects.push(name);
+  setDay(k,day); }
+
 /* ---------- 라우팅 ---------- */
 function route(){
   const p = loadProfile();
-  if(!p){ draft = {}; stepIndex = 0; return renderWelcome(); }
+  if(!p){ draft={}; stepIndex=0; return renderWelcome(); }
   renderApp(p);
 }
 
-/* ---------- 화면: 웰컴 ---------- */
+/* ---------- 웰컴 ---------- */
 function renderWelcome(){
   app.innerHTML = `
     <div class="screen">
@@ -94,12 +133,11 @@ function renderWelcome(){
   document.getElementById('start').onclick = ()=>{ stepIndex=0; renderStep(); };
 }
 
-/* ---------- 화면: 온보딩 스텝 ---------- */
+/* ---------- 온보딩 스텝 ---------- */
 function renderStep(){
   const step = STEPS[stepIndex];
-  const pct = Math.round((stepIndex)/(STEPS.length)*100);
-  let body = '';
-
+  const pct = Math.round(stepIndex/STEPS.length*100);
+  let body='';
   if(step.type==='basic'){
     body = `
       <div class="row">
@@ -107,8 +145,8 @@ function renderStep(){
         <div class="num"><input id="f-weight" type="number" inputmode="decimal" placeholder="체중(kg)" value="${draft.weight||''}"></div>
       </div>
       <div class="opts grid2" style="margin-top:10px">
-        ${['f:여성','m:남성'].map(o=>{const[v,l]=o.split(':');return `
-          <label class="opt"><input type="radio" name="sex" value="${v}" ${draft.sex===v?'checked':''}><span>${l}</span></label>`}).join('')}
+        ${[['f','여성'],['m','남성']].map(([v,l])=>`
+          <label class="opt"><input type="radio" name="sex" value="${v}" ${draft.sex===v?'checked':''}><span>${l}</span></label>`).join('')}
       </div>`;
   } else {
     body = `<div class="opts ${step.opts.length>3?'grid2':''}">
@@ -116,7 +154,6 @@ function renderStep(){
         <label class="opt"><input type="radio" name="opt" value="${v}" ${draft[step.key]===v?'checked':''}><span>${l}</span></label>`).join('')}
     </div>`;
   }
-
   app.innerHTML = `
     <div class="screen">
       <div class="progress"><i style="width:${pct}%"></i></div>
@@ -128,14 +165,12 @@ function renderStep(){
         <button class="btn" id="next">${stepIndex===STEPS.length-1?'완료':'다음'}</button>
       </div>
     </div>`;
-
-  // 라디오 선택 시 자동 다음 (basic 제외)
   if(step.type!=='basic'){
     document.querySelectorAll('input[name="opt"]').forEach(r=>{
-      r.onchange = ()=>{ draft[step.key]=r.value; setTimeout(nextStep, 180); };
+      r.onchange = ()=>{ draft[step.key]=r.value; setTimeout(nextStep,180); };
     });
   }
-  const back = document.getElementById('back');
+  const back=document.getElementById('back');
   if(back) back.onclick = ()=>{ stepIndex--; renderStep(); };
   document.getElementById('next').onclick = ()=>{
     if(step.type==='basic'){
@@ -143,61 +178,56 @@ function renderStep(){
       const weight=Number(document.getElementById('f-weight').value);
       const sex=document.querySelector('input[name="sex"]:checked');
       if(!age||!weight||!sex){ shake(); return; }
-      draft.age=age; draft.weight=weight; draft.sex=sex.value;
-      nextStep();
-    } else {
-      if(!draft[step.key]){ shake(); return; }
-      nextStep();
-    }
+      draft.age=age; draft.weight=weight; draft.sex=sex.value; nextStep();
+    } else { if(!draft[step.key]){ shake(); return; } nextStep(); }
   };
 }
-function nextStep(){
-  if(stepIndex < STEPS.length-1){ stepIndex++; renderStep(); }
-  else finishOnboarding();
-}
+function nextStep(){ if(stepIndex<STEPS.length-1){ stepIndex++; renderStep(); } else finishOnboarding(); }
 function shake(){ const n=document.getElementById('next'); n.animate([{transform:'translateX(0)'},{transform:'translateX(-6px)'},{transform:'translateX(6px)'},{transform:'translateX(0)'}],{duration:220}); }
-
 function finishOnboarding(){
-  const derived = compute(draft);
-  const profile = { ...draft, ...derived, v:1, createdAt:new Date().toISOString() };
-  saveProfile(profile);
-  activeTab='home';
-  renderApp(profile);
+  const profile = { ...draft, ...compute(draft), v:1, createdAt:new Date().toISOString() };
+  saveProfile(profile); activeTab='home'; renderApp(profile);
 }
 
-/* ---------- 화면: 앱(탭 구성) ---------- */
+/* ---------- 앱(탭) ---------- */
 function renderApp(p){
   const body = { home:homeView, log:logView, routine:routineView, settings:settingsView }[activeTab](p);
   app.innerHTML = `<div class="screen has-tabs">${body}</div>${tabbar()}`;
   bindTabs(p);
-  if(activeTab==='home'){
-    const bar=document.getElementById('proteinProg');
-    if(bar) requestAnimationFrame(()=>bar.style.width='0%'); // Week2: 실제 섭취량 반영
-  }
+  if(activeTab==='home') bindHome(p);
+  if(activeTab==='log') bindLog(p);
   if(activeTab==='settings') bindSettings(p);
 }
 
-function greeting(){
-  const h=new Date().getHours();
-  return h<11?'좋은 아침이에요':h<17?'오늘도 화이팅':h<21?'좋은 저녁이에요':'오늘 하루 수고했어요';
-}
+function greeting(){ const h=new Date().getHours();
+  return h<11?'좋은 아침이에요':h<17?'오늘도 화이팅':h<21?'좋은 저녁이에요':'오늘 하루 수고했어요'; }
 const RISK_LABEL={low:'낮음',mid:'중간',high:'높음'};
 const DRUG_LABEL={mounjaro:'마운자로',wegovy:'위고비',saxenda:'삭센다',oral:'경구/기타'};
 
+/* ---------- 홈 ---------- */
 function homeView(p){
+  const day=getDay(todayKey());
+  const total=proteinTotal(day);
+  const pct=Math.min(100, Math.round(total/p.proteinTarget*100));
+  const remain=Math.max(0, p.proteinTarget-total);
+  const st=streak();
   return `
     <p class="greet">${greeting()} 👋</p>
     <h2>오늘도 근육 지켜요</h2>
 
     <div class="card hero-protein">
-      <div class="lbl">오늘 단백질 목표</div>
-      <div class="big">0<span class="unit">/${p.proteinTarget}g</span></div>
-      <div class="prog"><i id="proteinProg"></i></div>
-      <div class="lbl">기록 기능은 곧 열려요 (Week 2)</div>
+      <div class="lbl">오늘 단백질</div>
+      <div class="big">${total}<span class="unit">/${p.proteinTarget}g</span></div>
+      <div class="prog"><i id="proteinProg" style="width:${pct}%"></i></div>
+      <div class="lbl">${remain>0 ? `목표까지 ${remain}g 남았어요` : '오늘 목표 달성! 💪'}</div>
+      <div class="quick" id="homeQuick">
+        ${QUICK_FOODS.map(([l,g])=>`<button class="chip" data-g="${g}" data-l="${l}">+${g} ${l}</button>`).join('')}
+        <button class="chip alt" id="quickCustom">직접입력</button>
+      </div>
     </div>
 
     <div class="stat-row">
-      <div class="stat"><div class="v">${DRUG_LABEL[p.drug]}</div><div class="k">복용 약</div></div>
+      <div class="stat"><div class="v">🔥 ${st}일</div><div class="k">연속 기록</div></div>
       <div class="stat"><div class="v"><span class="badge ${p.riskLevel}">● ${RISK_LABEL[p.riskLevel]}</span></div><div class="k">근손실 위험도</div></div>
     </div>
 
@@ -213,19 +243,111 @@ function homeView(p){
 
     <p class="disclaimer">의료 진단·처방이 아닙니다. 약물 관련 결정은 의사와 상담하세요.</p>`;
 }
+function bindHome(p){
+  document.querySelectorAll('#homeQuick .chip[data-g]').forEach(b=>{
+    b.onclick = ()=>{ addProtein(Number(b.dataset.g), b.dataset.l); renderApp(p); };
+  });
+  const c=document.getElementById('quickCustom');
+  if(c) c.onclick = ()=>{
+    const v=prompt('단백질 양(g)을 입력하세요','20');
+    const g=Number(v); if(g>0){ addProtein(g,'직접입력'); renderApp(p); }
+  };
+}
 
-function comingSoon(title, weekText, desc){
+/* ---------- 기록 탭 (Week 2) ---------- */
+const SIDE_EFFECTS=['메스꺼움','변비','피로','속쓰림','두통'];
+function logView(p){
+  const key=todayKey();
+  const day=getDay(key);
+  const total=proteinTotal(day);
+  const pct=Math.min(100, Math.round(total/p.proteinTarget*100));
+  const logs=loadLogs();
+  const recent=[];
+  const d=new Date();
+  for(let i=0;i<7;i++){ const k=todayKey(d); recent.push([k, logs[k]]); d.setDate(d.getDate()-1); }
+
   return `
-    <h2>${title}</h2>
+    <h2>오늘 기록</h2>
+    <p class="sub">${key}</p>
+
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <b>단백질</b><span class="muted">${total} / ${p.proteinTarget}g</span>
+      </div>
+      <div class="prog" style="margin:10px 0"><i style="width:${pct}%"></i></div>
+      <div class="quick" id="logQuick">
+        ${QUICK_FOODS.map(([l,g])=>`<button class="chip" data-g="${g}" data-l="${l}">+${g} ${l}</button>`).join('')}
+        <button class="chip alt" id="logCustom">직접입력</button>
+      </div>
+      ${day.protein.length ? `<ul class="entries">${day.protein.map((e,i)=>`
+        <li><span>${e.label} · ${e.g}g</span><button data-idx="${i}" class="del">✕</button></li>`).join('')}</ul>` : `<p class="sub" style="margin-top:12px">아직 기록이 없어요. 위에서 추가해보세요.</p>`}
+    </div>
+
+    <div class="card">
+      <b>오늘 체중</b>
+      <div class="row" style="margin-top:8px">
+        <div class="num"><input id="w-input" type="number" inputmode="decimal" placeholder="kg" value="${day.weightKg??''}"></div>
+        <button class="btn" style="flex:0 0 90px;margin:0" id="w-save">저장</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <b>오늘 근력운동</b>
+        <button class="toggle ${day.resistanceDone?'on':''}" id="res-toggle">${day.resistanceDone?'✓ 했어요':'안 했어요'}</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <b>부작용 (있으면 체크)</b>
+      <div class="chips" id="side-chips" style="margin-top:10px">
+        ${SIDE_EFFECTS.map(s=>`<button class="chip ${day.sideEffects.includes(s)?'sel':''}" data-s="${s}">${s}</button>`).join('')}
+      </div>
+    </div>
+
+    <div class="section-title">최근 7일</div>
+    <div class="card">
+      ${recent.map(([k,dd])=>{
+        const t=dd?proteinTotal(dd):0; const done=dd&&dd.resistanceDone; const w=dd&&dd.weightKg;
+        const ok=t>=p.proteinTarget;
+        return `<div class="kv">
+          <span class="k">${k.slice(5)}</span>
+          <span>${t>0?`<b style="color:${ok?'var(--low)':'var(--text)'}">${t}g</b>`:'<span class="muted">–</span>'} ${done?'· 💪':''} ${w?`· ${w}kg`:''}</span>
+        </div>`;
+      }).join('')}
+    </div>
+    <p class="disclaimer">기록은 이 기기에 저장돼요. (클라우드 동기화는 추후)</p>`;
+}
+function bindLog(p){
+  document.querySelectorAll('#logQuick .chip[data-g]').forEach(b=>{
+    b.onclick=()=>{ addProtein(Number(b.dataset.g), b.dataset.l); renderApp(p); };
+  });
+  const lc=document.getElementById('logCustom');
+  if(lc) lc.onclick=()=>{ const v=prompt('단백질 양(g)','20'); const g=Number(v); if(g>0){ addProtein(g,'직접입력'); renderApp(p); } };
+  document.querySelectorAll('.entries .del').forEach(b=>{
+    b.onclick=()=>{ removeProtein(Number(b.dataset.idx)); renderApp(p); };
+  });
+  const ws=document.getElementById('w-save');
+  if(ws) ws.onclick=()=>{ const v=Number(document.getElementById('w-input').value); if(v>0){ setWeight(v); renderApp(p); } };
+  const rt=document.getElementById('res-toggle');
+  if(rt) rt.onclick=()=>{ toggleResistance(); renderApp(p); };
+  document.querySelectorAll('#side-chips .chip').forEach(b=>{
+    b.onclick=()=>{ toggleSide(b.dataset.s); renderApp(p); };
+  });
+}
+
+/* ---------- 루틴 (곧) ---------- */
+function routineView(){
+  return `
+    <h2>루틴</h2>
     <div class="card center" style="padding:40px 18px">
-      <div style="font-size:44px">🚧</div>
-      <p style="font-weight:800;margin:10px 0 4px">${weekText}에 열려요</p>
-      <p class="sub">${desc}</p>
+      <div style="font-size:44px">🥗</div>
+      <p style="font-weight:800;margin:10px 0 4px">Week 3에 열려요</p>
+      <p class="sub">약·목표에 맞춘 저항운동 루틴과 "오늘 뭐 먹지" 단백질 추천을 AI가 매일 제안해요.</p>
     </div>`;
 }
-function logView(){ return comingSoon('기록','Week 2~5','오늘 먹은 단백질·체중·근력·부작용을 30초에 기록하고, 유지되는지 그래프로 확인해요.'); }
-function routineView(){ return comingSoon('루틴','Week 3','약·목표에 맞춘 저항운동 루틴과 "오늘 뭐 먹지" 단백질 추천을 AI가 매일 제안해요.'); }
 
+/* ---------- 설정 ---------- */
 function settingsView(p){
   return `
     <h2>설정</h2>
@@ -240,12 +362,12 @@ function settingsView(p){
     </div>
     <button class="btn secondary" id="redo">프로필 다시 설정</button>
     <button class="btn ghost" id="reset">데이터 초기화</button>
-    <p class="disclaimer center logo">머슬<span class="dot">킵</span> · MVP v0.1 (Week 1)</p>`;
+    <p class="disclaimer center logo">머슬<span class="dot">킵</span> · MVP v0.2 (Week 2)</p>`;
 }
 function bindSettings(p){
-  document.getElementById('redo').onclick = ()=>{ draft={...p}; stepIndex=0; renderStep(); };
-  document.getElementById('reset').onclick = ()=>{
-    if(confirm('모든 데이터를 지우고 처음부터 시작할까요?')){ clearProfile(); route(); }
+  document.getElementById('redo').onclick=()=>{ draft={...p}; stepIndex=0; renderStep(); };
+  document.getElementById('reset').onclick=()=>{
+    if(confirm('프로필과 모든 기록을 지우고 처음부터 시작할까요?')){ clearProfile(); localStorage.removeItem(LOGS_KEY); route(); }
   };
 }
 
@@ -256,15 +378,12 @@ function tabbar(){
     <button data-tab="${id}" class="${activeTab===id?'active':''}"><span class="ic">${ic}</span>${l}</button>`).join('')}</nav>`;
 }
 function bindTabs(p){
-  document.querySelectorAll('.tabbar button').forEach(b=>{
-    b.onclick = ()=>{ activeTab=b.dataset.tab; renderApp(p); };
-  });
+  document.querySelectorAll('.tabbar button').forEach(b=>{ b.onclick=()=>{ activeTab=b.dataset.tab; renderApp(p); }; });
 }
 
-/* ---------- PWA 서비스워커 ---------- */
+/* ---------- PWA ---------- */
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 }
 
-/* ---------- 시작 ---------- */
 route();

@@ -414,7 +414,16 @@ function logView(p){
       </div>
     </div>
 
-    <div class="section-title">최근 7일</div>
+    <div class="section-title">이번 주 리포트</div>
+    ${weeklyReportCard(p)}
+
+    <div class="section-title">최근 14일 단백질</div>
+    <div class="card">${proteinBarChart(rangeDays(14), p.proteinTarget)}</div>
+
+    <div class="section-title">체중 추세</div>
+    <div class="card">${weightChart(rangeDays(14))}</div>
+
+    <div class="section-title">최근 7일 요약</div>
     <div class="card">
       ${recent.map(([k,dd])=>{
         const t=dd?proteinTotal(dd):0; const done=dd&&dd.resistanceDone; const w=dd&&dd.weightKg; const inj=dd&&dd.injectionDone;
@@ -443,6 +452,56 @@ function bindLog(p){
   document.querySelectorAll('#side-chips .chip').forEach(b=>{
     b.onclick=()=>{ toggleSide(b.dataset.s); renderApp(p); };
   });
+}
+
+/* ---------- 분석/차트 (Week 5) ---------- */
+function rangeDays(n){ const logs=loadLogs(); const arr=[]; for(let i=n-1;i>=0;i--){ const k=todayKey(addDays(new Date(),-i)); arr.push([k, logs[k]]); } return arr; }
+function weekFeedback(hit){ return hit>=6?'완벽해요! 💪':hit>=4?'잘하고 있어요 👍':hit>=2?'조금만 더 챙겨봐요':'이번 주 단백질을 놓쳤어요. 다시 시작! 🙂'; }
+function weeklyReportCard(p){
+  const days=rangeDays(7);
+  let hit=0,wk=0,inj=0,ptot=0,pdays=0;
+  days.forEach(([k,dd])=>{ if(!dd)return; const t=proteinTotal(dd); if(t>0){ptot+=t;pdays++;} if(t>=p.proteinTarget)hit++; if(dd.resistanceDone)wk++; if(dd.injectionDone)inj++; });
+  const avg=pdays?Math.round(ptot/pdays):0;
+  return `<div class="card">
+    <b>📅 이번 주 리포트 · 최근 7일</b>
+    <div class="stat-row" style="margin-top:12px">
+      <div class="stat"><div class="v">${hit}<span style="font-size:13px;color:var(--muted)">/7</span></div><div class="k">단백질 목표</div></div>
+      <div class="stat"><div class="v">${wk}회</div><div class="k">근력운동</div></div>
+      <div class="stat"><div class="v">${inj}회</div><div class="k">주사</div></div>
+    </div>
+    <p class="sub" style="margin-top:12px;text-align:center">평균 단백질 <b style="color:var(--accent2)">${avg}g</b> / 목표 ${p.proteinTarget}g · ${weekFeedback(hit)}</p>
+  </div>`;
+}
+function proteinBarChart(days, target){
+  const W=320,H=132,pad=18,n=days.length;
+  const vals=days.map(([k,dd])=>dd?proteinTotal(dd):0);
+  const max=Math.max(target,...vals,1);
+  const gap=(W-pad*2)/n, bw=gap*0.62, baseY=H-22, top=12;
+  const sc=v=>(v/max)*(baseY-top);
+  const bars=vals.map((v,i)=>{ const x=pad+gap*i+(gap-bw)/2, h=sc(v), ok=v>=target&&v>0;
+    return `<rect x="${x.toFixed(1)}" y="${(baseY-h).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0,h).toFixed(1)}" rx="3" fill="${ok?'#59e2c5':'#3a4266'}"/>`; }).join('');
+  const ty=baseY-sc(target);
+  const labels=days.map(([k],i)=> i%3===0?`<text x="${(pad+gap*i+gap/2).toFixed(1)}" y="${H-6}" font-size="8" fill="#6b7396" text-anchor="middle">${k.slice(8)}</text>`:'').join('');
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="최근 단백질 섭취 막대그래프">
+    <line x1="${pad}" y1="${ty.toFixed(1)}" x2="${W-pad}" y2="${ty.toFixed(1)}" stroke="#6c8cff" stroke-width="1" stroke-dasharray="4 4"/>
+    <text x="${W-pad}" y="${(ty-4).toFixed(1)}" font-size="8" fill="#6c8cff" text-anchor="end">목표 ${target}g</text>
+    ${bars}${labels}
+  </svg>`;
+}
+function weightChart(days){
+  const pts=days.map(([k,dd],i)=>[i,(dd&&dd.weightKg)?dd.weightKg:null]).filter(p=>p[1]!=null);
+  if(pts.length<2) return `<p class="sub center" style="padding:18px 0">체중을 2일 이상 기록하면 추세가 보여요.</p>`;
+  const W=320,H=120,pad=24,n=days.length;
+  const ws=pts.map(p=>p[1]), min=Math.min(...ws), max=Math.max(...ws), rng=(max-min)||1;
+  const X=i=>pad+(i/(n-1))*(W-pad*2), Y=w=>14+(1-(w-min)/rng)*(H-38);
+  const path=pts.map((p,idx)=>`${idx?'L':'M'}${X(p[0]).toFixed(1)} ${Y(p[1]).toFixed(1)}`).join(' ');
+  const dots=pts.map(p=>`<circle cx="${X(p[0]).toFixed(1)}" cy="${Y(p[1]).toFixed(1)}" r="3" fill="#59e2c5"/>`).join('');
+  const diff=(pts[pts.length-1][1]-pts[0][1]).toFixed(1);
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="체중 추세 선그래프">
+    <path d="${path}" fill="none" stroke="#6c8cff" stroke-width="2"/>${dots}
+    <text x="${pad}" y="11" font-size="9" fill="#6b7396">${max}kg</text>
+    <text x="${pad}" y="${H-4}" font-size="9" fill="#6b7396">${min}kg</text>
+  </svg><p class="sub center" style="margin-top:2px">기간 변화 <b style="color:${diff<=0?'var(--accent2)':'var(--text)'}">${diff>0?'+':''}${diff}kg</b></p>`;
 }
 
 /* ---------- 루틴 (Week 3): 규칙기반 추천 엔진 ----------
@@ -555,7 +614,7 @@ function settingsView(p){
     </div>
     <button class="btn secondary" id="redo">프로필 다시 설정</button>
     <button class="btn ghost" id="reset">데이터 초기화</button>
-    <p class="disclaimer center logo">머슬<span class="dot">킵</span> · MVP v0.4 (Week 4)</p>`;
+    <p class="disclaimer center logo">머슬<span class="dot">킵</span> · MVP v0.5 (Week 5)</p>`;
 }
 function bindSettings(p){
   document.getElementById('redo').onclick=()=>{ draft={...p}; stepIndex=0; renderStep(); };

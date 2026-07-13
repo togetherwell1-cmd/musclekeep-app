@@ -1,0 +1,15 @@
+{
+  "name": "머슬킵 — 근육 지키며 감량",
+  "short_name": "머슬킵",
+  "description": "GLP-1(위고비·마운자로) 복용 중 근육을 지키며 감량하도록 매일 단백질·운동·주사일을 챙겨주는 코치",
+  "lang": "ko",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f1220",
+  "theme_color": "#0f1220",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

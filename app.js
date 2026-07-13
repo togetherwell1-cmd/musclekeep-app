@@ -11,6 +11,7 @@ const app = document.getElementById('app');
 let draft = {};
 let stepIndex = 0;
 let activeTab = 'home';
+let showInjForm = false, injDraft = null, notified = false;
 
 /* ---------- 온보딩 질문 ---------- */
 const STEPS = [
@@ -107,12 +108,61 @@ function toggleResistance(){ const k=todayKey(); const day=getDay(k); day.resist
 function toggleSide(name){ const k=todayKey(); const day=getDay(k);
   const i=day.sideEffects.indexOf(name); if(i>=0) day.sideEffects.splice(i,1); else day.sideEffects.push(name);
   setDay(k,day); }
+function toggleInjection(){ const k=todayKey(); const day=getDay(k); day.injectionDone=!day.injectionDone; setDay(k,day); }
+
+/* ---------- 주사일 (Week 4) ---------- */
+const WEEKDAYS=['일','월','화','수','목','금','토'];
+function startOfDay(d){ const x=new Date(d); x.setHours(0,0,0,0); return x; }
+function addDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
+function sameDay(a,b){ return startOfDay(a).getTime()===startOfDay(b).getTime(); }
+function nextInjectionDate(inj, doneToday){
+  const now=new Date();
+  if(inj.freq==='daily') return doneToday ? addDays(startOfDay(now),1) : startOfDay(now);
+  let diff=(inj.weekday - now.getDay()+7)%7;
+  if(diff===0 && doneToday) diff=7;
+  return addDays(startOfDay(now), diff);
+}
+function ddayText(date){ const diff=Math.round((startOfDay(date)-startOfDay(new Date()))/86400000);
+  return diff<=0?'오늘':diff===1?'내일':`D-${diff}`; }
+function pad2(n){ return String(n).padStart(2,'0'); }
+function fmtICS(d){ return `${d.getFullYear()}${pad2(d.getMonth()+1)}${pad2(d.getDate())}T${pad2(d.getHours())}${pad2(d.getMinutes())}00`; }
+function buildICS(inj){
+  const byday=['SU','MO','TU','WE','TH','FR','SA'][inj.weekday||0];
+  const [hh,mm]=(inj.time||'09:00').split(':');
+  const start=nextInjectionDate(inj,false); start.setHours(Number(hh),Number(mm),0,0);
+  const rule=inj.freq==='daily'?'FREQ=DAILY':`FREQ=WEEKLY;BYDAY=${byday}`;
+  return ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//musclekeep//KR','CALSCALE:GREGORIAN',
+    'BEGIN:VEVENT',`UID:mk-inj-${start.getTime()}@musclekeep`,`DTSTAMP:${fmtICS(new Date())}`,
+    `DTSTART:${fmtICS(start)}`,`RRULE:${rule}`,'SUMMARY:💉 주사 맞는 날 (머슬킵)',
+    'DESCRIPTION:GLP-1 주사 리마인더 — 단백질·운동도 챙기세요!',
+    'BEGIN:VALARM','TRIGGER:-PT30M','ACTION:DISPLAY','DESCRIPTION:주사 30분 전','END:VALARM',
+    'END:VEVENT','END:VCALENDAR'].join('\r\n');
+}
+function downloadICS(inj){
+  const blob=new Blob([buildICS(inj)],{type:'text/calendar;charset=utf-8'});
+  const url=URL.createObjectURL(blob); const a=document.createElement('a');
+  a.href=url; a.download='musclekeep-injection.ics'; document.body.appendChild(a); a.click();
+  a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function notifOn(){ return localStorage.getItem('mk_notif')==='1' && ('Notification'in window) && Notification.permission==='granted'; }
+function enableNotif(p){
+  if(!('Notification'in window)){ alert('이 브라우저는 알림을 지원하지 않아요.'); return; }
+  Notification.requestPermission().then(perm=>{ if(perm==='granted'){ localStorage.setItem('mk_notif','1'); maybeNotify(p); } renderApp(p); });
+}
+function maybeNotify(p){
+  if(!notifOn() || !p.injection) return;
+  const done=getDay(todayKey()).injectionDone;
+  if(sameDay(nextInjectionDate(p.injection,done), new Date()) && !done){
+    try{ new Notification('오늘 주사일이에요 💉',{body:'잊지 말고 주사 + 단백질 챙기세요!',icon:'icon.svg'}); }catch(e){}
+  }
+}
 
 /* ---------- 라우팅 ---------- */
 function route(){
   const p = loadProfile();
   if(!p){ draft={}; stepIndex=0; return renderWelcome(); }
   renderApp(p);
+  if(!notified){ notified=true; maybeNotify(p); }
 }
 
 /* ---------- 웰컴 ---------- */
@@ -237,12 +287,53 @@ function homeView(p){
       ${p.actions.map((a,i)=>`<li><span class="n">${i+1}</span><span>${a}</span></li>`).join('')}
     </ul>
 
-    <div class="card soon">
-      <div style="display:flex;align-items:center"><b>💉 다음 주사일 알림</b><span class="pill-soon">곧 (Week 4)</span></div>
-      <p class="sub" style="margin-top:6px">주사 요일을 등록하면 매주 리마인드해드릴게요.</p>
-    </div>
+    ${injectionCard(p)}
 
     <p class="disclaimer">의료 진단·처방이 아닙니다. 약물 관련 결정은 의사와 상담하세요.</p>`;
+}
+
+/* 주사일 카드 / 설정 폼 */
+function injectionCard(p){
+  const inj=p.injection;
+  if(showInjForm || !inj){
+    if(!injDraft) injDraft={ freq:(p.drug==='saxenda'||p.drug==='oral')?'daily':'weekly', weekday:2, time:'09:00', ...(inj||{}) };
+    return injFormHTML(injDraft);
+  }
+  const done=getDay(todayKey()).injectionDone;
+  const nd=nextInjectionDate(inj,done);
+  const isToday=sameDay(nd,new Date()) && !done;
+  const label=inj.freq==='daily'?'매일':`매주 ${WEEKDAYS[inj.weekday]}요일`;
+  return `<div class="card inj">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <b>💉 주사 일정</b><button class="chip" id="injEdit">변경</button>
+    </div>
+    ${isToday
+      ? `<div class="inj-today">오늘이 주사일이에요! 💉</div><button class="btn" id="injDone2">주사 완료 체크</button>`
+      : `<div class="inj-next"><span>${label} · ${inj.time}</span><span class="dday">${ddayText(nd)}</span></div>${done?'<p class="sub" style="margin-top:8px;text-align:right">오늘 주사 완료 ✓</p>':''}`}
+    <div class="inj-actions">
+      <button class="chip" id="injIcs">📅 캘린더에 추가</button>
+      <button class="chip ${notifOn()?'sel-on':''}" id="injNotif">${notifOn()?'🔔 알림 켜짐':'🔔 알림 켜기'}</button>
+    </div>
+  </div>`;
+}
+function injFormHTML(d){
+  return `<div class="card inj">
+    <b>💉 주사 일정 설정</b>
+    <p class="sub" style="margin:6px 0 10px">등록하면 D-day 표시 + 폰 캘린더 알림을 만들 수 있어요.</p>
+    <div class="opts grid2" id="injFreq">
+      <label class="opt"><input type="radio" name="ifreq" value="weekly" ${d.freq==='weekly'?'checked':''}><span>주 1회 (위고비·마운자로)</span></label>
+      <label class="opt"><input type="radio" name="ifreq" value="daily" ${d.freq==='daily'?'checked':''}><span>매일 (삭센다·경구)</span></label>
+    </div>
+    <div id="injWeekWrap" style="${d.freq==='daily'?'display:none':''}">
+      <div class="chips" id="injWeek" style="margin-top:10px;justify-content:center">
+        ${WEEKDAYS.map((w,i)=>`<button class="chip ${d.weekday===i?'sel':''}" data-wd="${i}">${w}</button>`).join('')}
+      </div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <div class="num"><input id="injTime" type="time" value="${d.time}"></div>
+      <button class="btn" style="flex:0 0 90px;margin:0" id="injSave">저장</button>
+    </div>
+  </div>`;
 }
 function bindHome(p){
   document.querySelectorAll('#homeQuick .chip[data-g]').forEach(b=>{
@@ -253,6 +344,23 @@ function bindHome(p){
     const v=prompt('단백질 양(g)을 입력하세요','20');
     const g=Number(v); if(g>0){ addProtein(g,'직접입력'); renderApp(p); }
   };
+  // 주사일 설정 폼
+  if(document.getElementById('injSave')){
+    document.querySelectorAll('#injFreq input').forEach(r=>r.onchange=()=>{
+      injDraft.freq=r.value; document.getElementById('injWeekWrap').style.display = r.value==='daily'?'none':''; });
+    document.querySelectorAll('#injWeek .chip').forEach(b=>b.onclick=()=>{
+      injDraft.weekday=Number(b.dataset.wd);
+      document.querySelectorAll('#injWeek .chip').forEach(x=>x.classList.remove('sel')); b.classList.add('sel'); });
+    document.getElementById('injSave').onclick=()=>{
+      injDraft.time=document.getElementById('injTime').value||'09:00';
+      p.injection={freq:injDraft.freq,weekday:injDraft.weekday,time:injDraft.time};
+      saveProfile(p); showInjForm=false; injDraft=null; renderApp(p); };
+  }
+  // 주사일 카드 버튼
+  const injEdit=document.getElementById('injEdit'); if(injEdit) injEdit.onclick=()=>{ injDraft={...p.injection}; showInjForm=true; renderApp(p); };
+  const injDone2=document.getElementById('injDone2'); if(injDone2) injDone2.onclick=()=>{ toggleInjection(); renderApp(p); };
+  const injIcs=document.getElementById('injIcs'); if(injIcs) injIcs.onclick=()=>downloadICS(p.injection);
+  const injNotif=document.getElementById('injNotif'); if(injNotif) injNotif.onclick=()=>enableNotif(p);
 }
 
 /* ---------- 기록 탭 (Week 2) ---------- */
@@ -309,11 +417,11 @@ function logView(p){
     <div class="section-title">최근 7일</div>
     <div class="card">
       ${recent.map(([k,dd])=>{
-        const t=dd?proteinTotal(dd):0; const done=dd&&dd.resistanceDone; const w=dd&&dd.weightKg;
+        const t=dd?proteinTotal(dd):0; const done=dd&&dd.resistanceDone; const w=dd&&dd.weightKg; const inj=dd&&dd.injectionDone;
         const ok=t>=p.proteinTarget;
         return `<div class="kv">
           <span class="k">${k.slice(5)}</span>
-          <span>${t>0?`<b style="color:${ok?'var(--low)':'var(--text)'}">${t}g</b>`:'<span class="muted">–</span>'} ${done?'· 💪':''} ${w?`· ${w}kg`:''}</span>
+          <span>${t>0?`<b style="color:${ok?'var(--low)':'var(--text)'}">${t}g</b>`:'<span class="muted">–</span>'} ${done?'· 💪':''} ${inj?'· 💉':''} ${w?`· ${w}kg`:''}</span>
         </div>`;
       }).join('')}
     </div>
@@ -443,10 +551,11 @@ function settingsView(p){
       <div class="kv"><span class="k">근력운동</span><span>${({none:'거의 안 함','1-2':'주 1~2회',sometimes:'가끔','3+':'주 3회 이상'})[p.exercise]}</span></div>
       <div class="kv"><span class="k">단백질 목표</span><span>${p.proteinTarget}g / 일</span></div>
       <div class="kv"><span class="k">근손실 위험도</span><span class="badge ${p.riskLevel}">● ${RISK_LABEL[p.riskLevel]}</span></div>
+      <div class="kv"><span class="k">주사 일정</span><span>${p.injection?(p.injection.freq==='daily'?'매일':'매주 '+WEEKDAYS[p.injection.weekday]+'요일')+' '+p.injection.time:'미설정 (홈에서 설정)'}</span></div>
     </div>
     <button class="btn secondary" id="redo">프로필 다시 설정</button>
     <button class="btn ghost" id="reset">데이터 초기화</button>
-    <p class="disclaimer center logo">머슬<span class="dot">킵</span> · MVP v0.3 (Week 3)</p>`;
+    <p class="disclaimer center logo">머슬<span class="dot">킵</span> · MVP v0.4 (Week 4)</p>`;
 }
 function bindSettings(p){
   document.getElementById('redo').onclick=()=>{ draft={...p}; stepIndex=0; renderStep(); };

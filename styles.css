@@ -134,6 +134,14 @@ h2{font-size:19px;font-weight:800;letter-spacing:-.4px;margin:0 0 4px}
 .routine li .ex-top b{font-size:15px}
 .routine li .sr{color:var(--accent);font-weight:700;font-size:13px}
 .routine li .tip{color:var(--muted);font-size:12.5px;margin-top:4px}
+/* 주사일 카드 (Week 4) */
+.inj .inj-today{font-size:16px;font-weight:800;color:var(--accent2);text-align:center;padding:10px 0 6px}
+.inj .inj-next{display:flex;justify-content:space-between;align-items:center;margin-top:12px;font-size:15px}
+.inj .dday{font-weight:900;color:var(--accent);background:var(--card2);border:1px solid var(--line);border-radius:999px;padding:5px 13px;font-size:14px}
+.inj .inj-actions{display:flex;gap:8px;margin-top:14px}
+.inj .inj-actions .chip{flex:1;text-align:center}
+.chip.sel-on{background:rgba(89,226,197,.16);border-color:var(--accent2);color:var(--accent2)}
+.num input[type=time]{color:#fff}
 .disclaimer{font-size:11.5px;color:#6b7396;text-align:center;margin-top:24px;line-height:1.55}
 .center{text-align:center}
 .logo{font-size:15px;font-weight:900;letter-spacing:-.3px}

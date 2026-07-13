@@ -11,7 +11,7 @@ const app = document.getElementById('app');
 let draft = {};
 let stepIndex = 0;
 let activeTab = 'home';
-let showInjForm = false, injDraft = null, notified = false;
+let showInjForm = false, injDraft = null, notified = false, showSub = false;
 
 /* ---------- 온보딩 질문 ---------- */
 const STEPS = [
@@ -157,6 +157,66 @@ function maybeNotify(p){
   }
 }
 
+/* ---------- 구독/프리미엄 (Week 6) ----------
+   무료: 온보딩·홈·기록·주사일 / 프리미엄: AI 추천·차트·주간리포트.
+   ⚠️ 실결제는 토스페이먼츠 등 PG 연동 필요. 현재 activateSub()는 테스트용 스텁. */
+const SUB_KEY='mk_sub_v1';
+function getSub(){ try{ return JSON.parse(localStorage.getItem(SUB_KEY))||{status:'none'}; }catch(e){ return {status:'none'}; } }
+function setSub(s){ localStorage.setItem(SUB_KEY, JSON.stringify(s)); }
+function startTrial(){ const s=getSub(); if(!s.trialStart) setSub({status:'trial', trialStart:new Date().toISOString()}); }
+function trialDaysLeft(){ const s=getSub(); if(!s.trialStart) return 0; const used=Math.floor((Date.now()-new Date(s.trialStart).getTime())/86400000); return Math.max(0,7-used); }
+function isPremium(){ const s=getSub(); if(s.status==='active') return true; if(s.status==='trial') return trialDaysLeft()>0; return false; }
+function activateSub(plan){ setSub({status:'active', activatedAt:new Date().toISOString(), plan}); } // TODO: 실제 PG 결제창 연동
+function cancelSub(){ setSub({status:'expired'}); }
+function subLabel(){ const s=getSub(); return s.status==='active'?'프리미엄 ✓':(s.status==='trial'&&trialDaysLeft()>0)?`무료체험 (${trialDaysLeft()}일 남음)`:'무료'; }
+
+function paywallCard(title, desc){
+  return `<div class="card paywall">
+    <div class="lock">🔒</div>
+    <b>${title}</b>
+    <p class="sub" style="margin:6px 0 14px">${desc}</p>
+    <button class="btn" id="goPremium">${getSub().trialStart?'프리미엄 잠금 해제':'7일 무료로 잠금 해제'}</button>
+  </div>`;
+}
+function subBanner(){
+  const s=getSub();
+  if(isPremium() && s.status==='trial') return `<div class="trial-note" id="goPremium">✨ 무료체험 ${trialDaysLeft()}일 남음 · 프리미엄 보기</div>`;
+  if(isPremium()) return '';
+  return `<div class="card banner" id="goPremium"><span>✨ AI 추천·차트 잠금 해제 · 프리미엄</span><span class="arrow">›</span></div>`;
+}
+function renderSub(p){
+  const trialUsed=!!getSub().trialStart;
+  const benefits=[['🥗','AI 식단·운동 추천','오늘 남은 단백질을 채울 한식·맞춤 운동을 매일'],
+    ['📊','추세 그래프 & 주간 리포트','근육이 지켜지는지 데이터로 확인'],
+    ['♾️','무제한 기록 보관','언제든 돌아보기'],
+    ['💉','주사일 스마트 알림','캘린더 연동 리마인더']];
+  return `<div class="screen">
+    <button class="btn ghost" id="subBack" style="width:auto;padding:8px 14px;margin:0">← 뒤로</button>
+    <div class="center"><div class="hero-emoji" style="margin:12px 0 4px">💪</div>
+      <h1>머슬킵 프리미엄</h1><p class="sub">근육 지키기, 제대로 하려면</p></div>
+    <div class="card">
+      ${benefits.map(([i,t,d])=>`<div class="benefit"><span class="bi">${i}</span><div><b>${t}</b><div class="sub">${d}</div></div></div>`).join('')}
+    </div>
+    <div class="plans">
+      <label class="plan"><input type="radio" name="plan" value="month" checked><span><b>월 9,900원</b><div class="sub">언제든 해지</div></span></label>
+      <label class="plan"><input type="radio" name="plan" value="year"><span><b>연 79,000원</b> <em class="save">2개월 무료</em><div class="sub">월 6,583원 꼴</div></span></label>
+    </div>
+    ${trialUsed
+      ? `<button class="btn" id="subPay">구독하기</button>`
+      : `<button class="btn" id="subTrial">7일 무료로 시작</button><button class="btn secondary" id="subPay">바로 구독하기</button>`}
+    <p class="disclaimer">체험 후 선택한 요금제로 전환돼요. 실제 결제는 토스페이먼츠 연동 후 활성화됩니다(현재 테스트 모드).</p>
+  </div>`;
+}
+function bindSub(p){
+  document.getElementById('subBack').onclick=()=>{ showSub=false; renderApp(p); };
+  const t=document.getElementById('subTrial'); if(t) t.onclick=()=>{ startTrial(); showSub=false; renderApp(p); };
+  const pay=document.getElementById('subPay'); if(pay) pay.onclick=()=>{
+    const plan=(document.querySelector('input[name=plan]:checked')||{}).value||'month';
+    // TODO: 실제 PG(토스페이먼츠) 결제창 호출. 지금은 테스트용 즉시 활성화.
+    if(confirm('테스트용으로 프리미엄을 활성화할까요?\n(실결제는 PG 연동 후 동작합니다)')){ activateSub(plan); showSub=false; renderApp(p); }
+  };
+}
+
 /* ---------- 라우팅 ---------- */
 function route(){
   const p = loadProfile();
@@ -241,6 +301,7 @@ function finishOnboarding(){
 
 /* ---------- 앱(탭) ---------- */
 function renderApp(p){
+  if(showSub){ app.innerHTML=renderSub(p); bindSub(p); return; }
   const body = { home:homeView, log:logView, routine:routineView, settings:settingsView }[activeTab](p);
   app.innerHTML = `<div class="screen has-tabs">${body}</div>${tabbar()}`;
   bindTabs(p);
@@ -248,6 +309,7 @@ function renderApp(p){
   if(activeTab==='log') bindLog(p);
   if(activeTab==='routine') bindRoutine(p);
   if(activeTab==='settings') bindSettings(p);
+  document.querySelectorAll('#goPremium').forEach(b=>b.onclick=()=>{ showSub=true; renderApp(p); });
 }
 
 function greeting(){ const h=new Date().getHours();
@@ -265,6 +327,7 @@ function homeView(p){
   return `
     <p class="greet">${greeting()} 👋</p>
     <h2>오늘도 근육 지켜요</h2>
+    ${subBanner()}
 
     <div class="card hero-protein">
       <div class="lbl">오늘 단백질</div>
@@ -414,6 +477,7 @@ function logView(p){
       </div>
     </div>
 
+    ${isPremium() ? `
     <div class="section-title">이번 주 리포트</div>
     ${weeklyReportCard(p)}
 
@@ -422,6 +486,10 @@ function logView(p){
 
     <div class="section-title">체중 추세</div>
     <div class="card">${weightChart(rangeDays(14))}</div>
+    ` : `
+    <div class="section-title">추세 & 리포트</div>
+    ${paywallCard('그래프·주간 리포트는 프리미엄','근육이 지켜지는지 체중·단백질 추세와 주간 리포트로 확인하세요.')}
+    `}
 
     <div class="section-title">최근 7일 요약</div>
     <div class="card">
@@ -547,6 +615,7 @@ function buildRoutine(p, seed){
 async function aiRecommend(/* kind, payload */){ return null; }
 
 function routineView(p){
+  if(!isPremium()) return `<h2>오늘의 루틴</h2>${paywallCard('AI 식단·운동 추천은 프리미엄','오늘 남은 단백질을 채울 한식 추천과 맞춤 저항운동 루틴을 매일 받아보세요.')}`;
   const day=getDay(todayKey());
   const gap=Math.max(0, p.proteinTarget - proteinTotal(day));
   const m=suggestMeals(gap, mealSeed);
@@ -611,15 +680,21 @@ function settingsView(p){
       <div class="kv"><span class="k">단백질 목표</span><span>${p.proteinTarget}g / 일</span></div>
       <div class="kv"><span class="k">근손실 위험도</span><span class="badge ${p.riskLevel}">● ${RISK_LABEL[p.riskLevel]}</span></div>
       <div class="kv"><span class="k">주사 일정</span><span>${p.injection?(p.injection.freq==='daily'?'매일':'매주 '+WEEKDAYS[p.injection.weekday]+'요일')+' '+p.injection.time:'미설정 (홈에서 설정)'}</span></div>
+      <div class="kv"><span class="k">구독</span><span>${subLabel()}</span></div>
     </div>
+    <button class="btn ${isPremium()?'secondary':''}" id="subManage">${getSub().status==='active'?'구독 관리':'프리미엄 보기'}</button>
     <button class="btn secondary" id="redo">프로필 다시 설정</button>
     <button class="btn ghost" id="reset">데이터 초기화</button>
-    <p class="disclaimer center logo">머슬<span class="dot">킵</span> · MVP v0.5 (Week 5)</p>`;
+    <p class="disclaimer center logo">머슬<span class="dot">킵</span> · MVP v0.6 (Week 6)</p>`;
 }
 function bindSettings(p){
   document.getElementById('redo').onclick=()=>{ draft={...p}; stepIndex=0; renderStep(); };
   document.getElementById('reset').onclick=()=>{
-    if(confirm('프로필과 모든 기록을 지우고 처음부터 시작할까요?')){ clearProfile(); localStorage.removeItem(LOGS_KEY); route(); }
+    if(confirm('프로필과 모든 기록을 지우고 처음부터 시작할까요?')){ clearProfile(); localStorage.removeItem(LOGS_KEY); localStorage.removeItem(SUB_KEY); route(); }
+  };
+  document.getElementById('subManage').onclick=()=>{
+    if(getSub().status==='active'){ if(confirm('구독을 해지할까요? (테스트)')){ cancelSub(); renderApp(p); } }
+    else { showSub=true; renderApp(p); }
   };
 }
 

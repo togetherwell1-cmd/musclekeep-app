@@ -196,6 +196,7 @@ function renderApp(p){
   bindTabs(p);
   if(activeTab==='home') bindHome(p);
   if(activeTab==='log') bindLog(p);
+  if(activeTab==='routine') bindRoutine(p);
   if(activeTab==='settings') bindSettings(p);
 }
 
@@ -336,15 +337,98 @@ function bindLog(p){
   });
 }
 
-/* ---------- 루틴 (곧) ---------- */
-function routineView(){
+/* ---------- 루틴 (Week 3): 규칙기반 추천 엔진 ----------
+   ⚙️ LLM 업그레이드 훅: aiRecommend()에 서버리스 엔드포인트를 꽂으면 규칙기반을 대체/보강.
+   현재는 키/서버 불필요한 로컬 엔진으로 동작(빠르고 무료). */
+let mealSeed=1, routineSeed=1;
+function rng32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+
+// 한식 위주 단백질 식품 DB (p = 단백질 g)
+const FOODS=[
+  {n:'삶은 계란 1개',p:6},{n:'닭가슴살 100g',p:23},{n:'닭안심 100g',p:23},
+  {n:'두부 반모(150g)',p:13},{n:'연두부 1팩',p:6},{n:'그릭요거트 100g',p:10},
+  {n:'프로틴 셰이크 1스쿱',p:20},{n:'참치캔 1개',p:25},{n:'연어 100g',p:20},
+  {n:'소고기 살코기 100g',p:26},{n:'돼지 등심 100g',p:22},{n:'새우 100g',p:20},
+  {n:'오징어 100g',p:18},{n:'낫토 1팩',p:8},{n:'우유 200ml',p:6},
+  {n:'검은콩 한 줌(30g)',p:11},{n:'프로틴바 1개',p:15},{n:'계란흰자 3개',p:11},
+  {n:'코티지치즈 100g',p:11},{n:'병아리콩 100g',p:9},
+];
+function suggestMeals(gap, seed){
+  const rng=rng32(seed*7+3);
+  const pool=[...FOODS].sort(()=>rng()-0.5);
+  const g=Math.max(15,gap);
+  const singles=pool.filter(f=>f.p>=Math.min(20,g*0.5)).slice(0,3);
+  // 조합: 목표 근접까지 2~3개
+  let combo=[], tot=0;
+  for(const f of pool){ if(tot>=g) break; if(combo.includes(f)) continue; combo.push(f); tot+=f.p; if(combo.length>=3) break; }
+  return { singles: singles.length?singles:pool.slice(0,3), combo, comboTotal:tot };
+}
+const EX={
+  lower:[{n:'의자 스쿼트',sr:'3세트 × 10회',tip:'의자에 살짝 앉았다 일어나기'},{n:'힙 브릿지',sr:'3 × 12',tip:'엉덩이 꽉 조이기'},{n:'런지',sr:'3 × 10(양쪽)',tip:'무릎이 발끝 넘지 않게'}],
+  push:[{n:'벽 팔굽혀펴기',sr:'3 × 12',tip:'익숙하면 무릎 대고'},{n:'무릎 푸시업',sr:'3 × 8',tip:'몸을 일자로'}],
+  pull:[{n:'밴드 로우',sr:'3 × 12',tip:'밴드 없으면 수건 당기기'},{n:'슈퍼맨',sr:'3 × 12',tip:'등 근육 조이기'}],
+  core:[{n:'플랭크',sr:'3 × 20초',tip:'허리 꺾이지 않게'},{n:'데드버그',sr:'3 × 10',tip:'허리를 바닥에 붙이고'}],
+};
+function buildRoutine(p, seed){
+  const rng=rng32(seed*11+5);
+  const pick=arr=>arr[Math.floor(rng()*arr.length)];
+  const r=[pick(EX.lower),pick(EX.push),pick(EX.pull),pick(EX.core)];
+  if(p.goal==='muscle') r.splice(2,0,pick(EX.lower)); // 근육 목표면 하체 1개 추가
+  return r;
+}
+// LLM 업그레이드 자리 (지금은 null 반환 → 로컬 엔진 사용)
+async function aiRecommend(/* kind, payload */){ return null; }
+
+function routineView(p){
+  const day=getDay(todayKey());
+  const gap=Math.max(0, p.proteinTarget - proteinTotal(day));
+  const m=suggestMeals(gap, mealSeed);
+  const routine=buildRoutine(p, routineSeed);
   return `
-    <h2>루틴</h2>
-    <div class="card center" style="padding:40px 18px">
-      <div style="font-size:44px">🥗</div>
-      <p style="font-weight:800;margin:10px 0 4px">Week 3에 열려요</p>
-      <p class="sub">약·목표에 맞춘 저항운동 루틴과 "오늘 뭐 먹지" 단백질 추천을 AI가 매일 제안해요.</p>
-    </div>`;
+    <h2>오늘의 루틴</h2>
+    <p class="sub">약·목표·오늘 기록에 맞춘 제안이에요</p>
+
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <b>🍚 오늘 뭐 먹지</b>
+        <button class="chip" id="mealRefresh">다른 추천 ↻</button>
+      </div>
+      <p class="sub" style="margin:8px 0 12px">${gap>0?`목표까지 <b style="color:var(--accent2)">${gap}g</b> 남았어요. 이 중 하나로 채워보세요.`:'오늘 목표 달성! 아래는 참고용이에요 💪'}</p>
+      ${m.singles.map(f=>`
+        <div class="rec"><span>${f.n} <b class="p">+${f.p}g</b></span>
+          <button class="chip logbtn" data-g="${f.p}" data-n="${f.n}">기록</button></div>`).join('')}
+      <div class="combo">
+        <div class="k">추천 조합</div>
+        <div>${m.combo.map(f=>f.n).join(' + ')} <b class="p">= ${m.comboTotal}g</b></div>
+        <button class="chip alt" id="comboLog" style="margin-top:8px">조합 전체 기록 (+${m.comboTotal}g)</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <b>🏋️ 오늘 운동 루틴</b>
+        <button class="chip" id="routineRefresh">다른 루틴 ↻</button>
+      </div>
+      <p class="sub" style="margin:8px 0 10px">근손실 방지엔 저항운동이 핵심. 집에서 맨몸/밴드로.</p>
+      <ol class="routine">
+        ${routine.map(e=>`<li><div class="ex-top"><b>${e.n}</b><span class="sr">${e.sr}</span></div><div class="tip">💡 ${e.tip}</div></li>`).join('')}
+      </ol>
+      <button class="btn ${day.resistanceDone?'secondary':''}" id="routineDone">${day.resistanceDone?'✓ 오늘 운동 완료됨':'오늘 운동 완료 기록'}</button>
+    </div>
+
+    <p class="disclaimer">규칙기반 추천 v1. AI 개인화 추천은 서버 연동 후 이 자리에 확장됩니다. 개인 건강상태에 따라 조정하세요.</p>`;
+}
+function bindRoutine(p){
+  document.getElementById('mealRefresh').onclick=()=>{ mealSeed++; renderApp(p); };
+  document.getElementById('routineRefresh').onclick=()=>{ routineSeed++; renderApp(p); };
+  document.querySelectorAll('.logbtn').forEach(b=>{
+    b.onclick=()=>{ addProtein(Number(b.dataset.g), b.dataset.n); renderApp(p); };
+  });
+  const cl=document.getElementById('comboLog');
+  if(cl) cl.onclick=()=>{ const m=suggestMeals(Math.max(0,p.proteinTarget-proteinTotal(getDay(todayKey()))), mealSeed);
+    m.combo.forEach(f=>addProtein(f.p,f.n)); renderApp(p); };
+  const rd=document.getElementById('routineDone');
+  if(rd) rd.onclick=()=>{ const day=getDay(todayKey()); if(!day.resistanceDone) toggleResistance(); renderApp(p); };
 }
 
 /* ---------- 설정 ---------- */
@@ -362,7 +446,7 @@ function settingsView(p){
     </div>
     <button class="btn secondary" id="redo">프로필 다시 설정</button>
     <button class="btn ghost" id="reset">데이터 초기화</button>
-    <p class="disclaimer center logo">머슬<span class="dot">킵</span> · MVP v0.2 (Week 2)</p>`;
+    <p class="disclaimer center logo">머슬<span class="dot">킵</span> · MVP v0.3 (Week 3)</p>`;
 }
 function bindSettings(p){
   document.getElementById('redo').onclick=()=>{ draft={...p}; stepIndex=0; renderStep(); };

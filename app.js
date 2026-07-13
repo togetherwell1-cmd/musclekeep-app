@@ -296,7 +296,8 @@ function nextStep(){ if(stepIndex<STEPS.length-1){ stepIndex++; renderStep(); } 
 function shake(){ const n=document.getElementById('next'); n.animate([{transform:'translateX(0)'},{transform:'translateX(-6px)'},{transform:'translateX(6px)'},{transform:'translateX(0)'}],{duration:220}); }
 function finishOnboarding(){
   const profile = { ...draft, ...compute(draft), v:1, createdAt:new Date().toISOString() };
-  saveProfile(profile); activeTab='home'; renderApp(profile);
+  saveProfile(profile); startTrial(); /* 신규 유저 7일 무료체험 자동 시작 → 전 기능 경험 */
+  activeTab='home'; renderApp(profile);
 }
 
 /* ---------- 앱(탭) ---------- */
@@ -685,6 +686,7 @@ function settingsView(p){
     <button class="btn ${isPremium()?'secondary':''}" id="subManage">${getSub().status==='active'?'구독 관리':'프리미엄 보기'}</button>
     <button class="btn secondary" id="redo">프로필 다시 설정</button>
     <button class="btn ghost" id="reset">데이터 초기화</button>
+    <p class="disclaimer center"><a href="terms.html" style="color:var(--muted)">이용약관</a> · <a href="privacy.html" style="color:var(--muted)">개인정보처리방침</a> · <a href="mailto:x@nomadx.life" style="color:var(--muted)">문의</a></p>
     <p class="disclaimer center logo">머슬<span class="dot">킵</span> · MVP v0.6 (Week 6)</p>`;
 }
 function bindSettings(p){

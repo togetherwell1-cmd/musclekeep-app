@@ -1,5 +1,5 @@
 /* 머슬킵 서비스워커 — network-first(오프라인 폴백). 개발 중 stale 캐시 방지. */
-const V = 'mk-v7';
+const V = 'mk-v8';
 const ASSETS = ['./', './index.html', './styles.css', './app.js', './manifest.webmanifest', './icon.svg', './terms.html', './privacy.html'];
 
 self.addEventListener('install', e => {

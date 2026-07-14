@@ -238,6 +238,7 @@ function renderWelcome(){
         <div class="kv"><span>📉 근손실 위험도</span><span class="muted">진단</span></div>
       </div>
       <button class="btn" id="start">시작하기</button>
+      <p class="sub center" style="font-size:12px;margin-top:10px">시작하면 <a href="terms.html">이용약관</a> · <a href="privacy.html">개인정보처리방침</a>에 동의하는 것으로 간주됩니다.</p>
       <p class="disclaimer">⚠️ 본 서비스는 의료 진단·처방·치료가 아니며 생활습관 정보 제공(웰니스 코칭)을 목적으로 합니다. 약물 복용·용량·중단은 반드시 의사와 상담하세요.</p>
     </div>`;
   document.getElementById('start').onclick = ()=>{ stepIndex=0; renderStep(); };
@@ -359,9 +360,12 @@ function homeView(p){
 /* 주사일 카드 / 설정 폼 */
 function injectionCard(p){
   const inj=p.injection;
-  if(showInjForm || !inj){
+  if(showInjForm){
     if(!injDraft) injDraft={ freq:(p.drug==='saxenda'||p.drug==='oral')?'daily':'weekly', weekday:2, time:'09:00', ...(inj||{}) };
     return injFormHTML(injDraft);
+  }
+  if(!inj){
+    return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><b>💉 주사 일정</b><button class="chip" id="injSetup">설정하기</button></div><p class="sub" style="margin-top:6px">등록하면 다음 주사 D-day + 폰 캘린더 알림을 만들어드려요.</p></div>`;
   }
   const done=getDay(todayKey()).injectionDone;
   const nd=nextInjectionDate(inj,done);
@@ -421,6 +425,7 @@ function bindHome(p){
       saveProfile(p); showInjForm=false; injDraft=null; renderApp(p); };
   }
   // 주사일 카드 버튼
+  const injSetup=document.getElementById('injSetup'); if(injSetup) injSetup.onclick=()=>{ injDraft=null; showInjForm=true; renderApp(p); };
   const injEdit=document.getElementById('injEdit'); if(injEdit) injEdit.onclick=()=>{ injDraft={...p.injection}; showInjForm=true; renderApp(p); };
   const injDone2=document.getElementById('injDone2'); if(injDone2) injDone2.onclick=()=>{ toggleInjection(); renderApp(p); };
   const injIcs=document.getElementById('injIcs'); if(injIcs) injIcs.onclick=()=>downloadICS(p.injection);
@@ -599,6 +604,14 @@ function suggestMeals(gap, seed){
   for(const f of pool){ if(tot>=g) break; if(combo.includes(f)) continue; combo.push(f); tot+=f.p; if(combo.length>=3) break; }
   return { singles: singles.length?singles:pool.slice(0,3), combo, comboTotal:tot };
 }
+/* 쿠팡파트너스 단백질 제품 (⚠️ 실제 파트너스 딥링크로 교체 · 아래는 검색 URL 임시값) */
+const COUPANG_NOTICE='쿠팡 파트너스 활동의 일환으로 일정액의 수수료를 제공받을 수 있습니다.';
+const COUPANG_PRODUCTS=[
+  {label:'프로틴 파우더',url:'https://www.coupang.com/np/search?q=프로틴'},
+  {label:'닭가슴살',url:'https://www.coupang.com/np/search?q=닭가슴살'},
+  {label:'그릭요거트',url:'https://www.coupang.com/np/search?q=그릭요거트'},
+  {label:'단백질바',url:'https://www.coupang.com/np/search?q=단백질바'},
+];
 const EX={
   lower:[{n:'의자 스쿼트',sr:'3세트 × 10회',tip:'의자에 살짝 앉았다 일어나기'},{n:'힙 브릿지',sr:'3 × 12',tip:'엉덩이 꽉 조이기'},{n:'런지',sr:'3 × 10(양쪽)',tip:'무릎이 발끝 넘지 않게'}],
   push:[{n:'벽 팔굽혀펴기',sr:'3 × 12',tip:'익숙하면 무릎 대고'},{n:'무릎 푸시업',sr:'3 × 8',tip:'몸을 일자로'}],
@@ -638,6 +651,11 @@ function routineView(p){
         <div class="k">추천 조합</div>
         <div>${m.combo.map(f=>f.n).join(' + ')} <b class="p">= ${m.comboTotal}g</b></div>
         <button class="chip alt" id="comboLog" style="margin-top:8px">조합 전체 기록 (+${m.comboTotal}g)</button>
+      </div>
+      <div class="coupang">
+        <div class="k">🛒 단백질 채우기 · 추천 제품</div>
+        <div class="cp-list">${COUPANG_PRODUCTS.map(x=>`<a class="cp" href="${x.url}" target="_blank" rel="noopener nofollow sponsored">${x.label}</a>`).join('')}</div>
+        <p class="cp-notice">${COUPANG_NOTICE}</p>
       </div>
     </div>
 

@@ -160,6 +160,12 @@ h2{font-size:19px;font-weight:800;letter-spacing:-.4px;margin:0 0 4px}
 .plan span{display:block;border:1px solid var(--line);border-radius:14px;padding:14px 16px;background:var(--card2);cursor:pointer;transition:.15s}
 .plan input:checked + span{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset;background:rgba(108,140,255,.12)}
 .plan .save{color:#0b1020;background:var(--accent2);border-radius:999px;padding:2px 8px;font-size:11px;font-weight:800;font-style:normal;margin-left:6px}
+/* 쿠팡 추천 제품 */
+.coupang{margin-top:14px;border-top:1px solid var(--line);padding-top:12px}
+.coupang .k{font-size:12px;color:var(--muted);font-weight:700;margin-bottom:8px}
+.cp-list{display:flex;flex-wrap:wrap;gap:7px}
+.cp{background:var(--card2);border:1px solid var(--line);border-radius:999px;padding:8px 13px;font-size:13px;font-weight:700;color:var(--accent);text-decoration:none}
+.cp-notice{font-size:10.5px;color:#6b7396;margin-top:10px}
 .disclaimer{font-size:11.5px;color:#6b7396;text-align:center;margin-top:24px;line-height:1.55}
 .center{text-align:center}
 .logo{font-size:15px;font-weight:900;letter-spacing:-.3px}

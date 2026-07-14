@@ -701,6 +701,15 @@ function settingsView(p){
       <div class="kv"><span class="k">주사 일정</span><span>${p.injection?(p.injection.freq==='daily'?'매일':'매주 '+WEEKDAYS[p.injection.weekday]+'요일')+' '+p.injection.time:'미설정 (홈에서 설정)'}</span></div>
       <div class="kv"><span class="k">구독</span><span>${subLabel()}</span></div>
     </div>
+    <div class="card">
+      <b>📚 근거·출처</b>
+      <p class="sub" style="margin:6px 0 10px">단백질·운동 권고는 공식 가이드라인을 근거로 합니다.</p>
+      <p class="sub" style="line-height:1.9">
+        · <a href="https://general.kosso.or.kr/html/user/core/view/reaction/main/kosso/inc/data/guideline2022_vol8.pdf" target="_blank" rel="noopener">대한비만학회 진료지침</a> (단백질 1.0~1.2g/kg, 근력 주2~3회)<br>
+        · <a href="https://health.kdca.go.kr/healthinfo/biz/health/gnrlzHealthInfo/gnrlzHealthInfo/gnrlzHealthInfoView.do?cntnts_sn=6722" target="_blank" rel="noopener">질병관리청 국가건강정보포털</a> (근손실)<br>
+        · <a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC12536186/" target="_blank" rel="noopener">의학 리뷰</a> (GLP-1 감량 시 20~30% 근육 손실)
+      </p>
+    </div>
     <button class="btn ${isPremium()?'secondary':''}" id="subManage">${getSub().status==='active'?'구독 관리':'프리미엄 보기'}</button>
     <button class="btn secondary" id="redo">프로필 다시 설정</button>
     <button class="btn ghost" id="reset">데이터 초기화</button>
